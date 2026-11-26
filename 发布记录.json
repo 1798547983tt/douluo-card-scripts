@@ -1,0 +1,50 @@
+{
+  "1.0.0": {
+    "files": {
+      "floor.js": "08b535eddba284b78b3bf957b0d32145c4c88388335f03327e0da7f7d33cb9b3",
+      "zod.js": "1b78a0de665ec89076c3e0edc45c27de654556f7566e5cad5c05f7c766662cc6",
+      "story-window.js": "49e8899a5c90eb23c5498dd12ea42ea135c3ffc835a8c27fb2e95fe8481a369e",
+      "opening.js": "6f483f5c0915635bb8a3cb27795da34cf404822bc5d5dab46513bf8c0b914b37",
+      "workshop.js": "130b02963d8ccb41c6888594d8655f3e16578c590ef25136ace9521267df28bd",
+      "phone.js": "a9f405f8e6bfae638569e0e043dae7eaae79b89319671870f98c5a9907941b40",
+      "status-bar.js": "da4607bea81d1863370fb79293fddf074f68849a397fd55063007583fdcf045f",
+      "core-wannianheimu.js": "4e10c7411648064ceff6782f0e1c94ff0efba65f655701bf6132edd54f01ef71",
+      "core-quanyuanjiahao.js": "670b98600815b8ef07db7de9052b9e0e133a67a3947680b2b8a76856f69450aa",
+      "core-shenjiewuran.js": "c74908024b624104ce4a65b6b3e12e3150355c356dcd05a0d7536d08a6c02c15",
+      "core-zuojianqiukong.js": "2d8bd74b1c122824b1c552964d96c4735dcf7e78efd93b7813b50f81e3c2bf80",
+      "core-zhushenweiguan.js": "a665ad2308830fb22d490eadf43f190e6dfb4281f579a223cc5f72490ad4b3be",
+      "core-yiguanxiuluo.js": "1262996fc9f38073037adaf5b6c672a1c75846e5db4d74a4f79d55f6f9c9e9ba",
+      "core-zhutianliechang.js": "42a5eb47728d39a3a68ed109f9f2e6753df8c80204e17a61d11ea710a8628e9f",
+      "gf-weilaimoniqi.js": "b479fb29c374ab686730916079ee6e226580cb00cb5fa91474a7e904e87837de",
+      "gf-shenlanjiadian.js": "1ee6f13e03643a77a91175dd9c05cb4812522851db7e015dd565b376c7fd8741",
+      "gf-zhutiandaida.js": "d6911b3255347f416534f03fc58edb0b28c8542311f46990676a9dda922abc29",
+      "gf-qiandaodaka.js": "34815e9f77125cab4e5446b5bf82dedfb89aa093c97accf1e6a895c1c677a0ba",
+      "gf-choujiang.js": "f78f7ec8b16abc446f624af292f94de40e365e979591a25390e1da33775adf41",
+      "gf-kuashidailiaotianqun.js": "85a59fb0aa7e813fe1d60c0e33bc62d010f029130958e9d4495e1d489e14481c",
+      "sect-bloodline.js": "ae520f47d0e9a35fe8dc205dc22073d104f87868e6b3f963af4eb29bb33c16d5"
+    },
+    "scripts": {
+      "floor.js": "斗罗楼层",
+      "zod.js": "斗罗ZOD",
+      "story-window.js": "斗罗剧情窗口",
+      "opening.js": "斗罗开局",
+      "workshop.js": "斗罗创意工坊",
+      "phone.js": "斗罗小手机",
+      "status-bar.js": "斗罗状态栏",
+      "core-wannianheimu.js": "斗罗核心·万年黑幕",
+      "core-quanyuanjiahao.js": "斗罗核心·全员嘉豪",
+      "core-shenjiewuran.js": "斗罗核心·神界污染",
+      "core-zuojianqiukong.js": "斗罗核心·做减求空",
+      "core-zhushenweiguan.js": "斗罗核心·诸神围观",
+      "core-yiguanxiuluo.js": "斗罗核心·衣冠修罗",
+      "core-zhutianliechang.js": "斗罗核心·诸天猎场",
+      "gf-weilaimoniqi.js": "斗罗金手指·未来模拟器",
+      "gf-shenlanjiadian.js": "斗罗金手指·深蓝加点",
+      "gf-zhutiandaida.js": "斗罗金手指·诸天代打",
+      "gf-qiandaodaka.js": "斗罗金手指·签到打卡",
+      "gf-choujiang.js": "斗罗金手指·抽奖",
+      "gf-kuashidailiaotianqun.js": "斗罗金手指·跨时代聊天群",
+      "sect-bloodline.js": "斗罗宗门血脉"
+    }
+  }
+}
