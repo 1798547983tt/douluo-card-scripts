@@ -1,4 +1,4 @@
-// 斗罗远程正文 zod.js 1.0.0
+// 斗罗远程正文 zod.js 1.1.0
 // 斗罗ZOD：由 源码/build.py 生成，勿手改。源码见 源码/共用/规则.js、源码/共用/宗门血脉.js、源码/zod/。
 import { registerMvuSchema } from "https://testingcf.jsdelivr.net/gh/StageDog/tavern_resource/dist/util/mvu_zod.js";
 

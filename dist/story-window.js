@@ -1,4 +1,4 @@
-// 斗罗远程正文 story-window.js 1.0.0
+// 斗罗远程正文 story-window.js 1.1.0
 // 斗罗剧情窗口：由 源码/build.py 生成，勿手改。规则见 源码/开局/窗口.js，接线见 源码/开局/剧情窗口.js。
 /* 斗罗变量 · 共用规则（纯函数，不碰 z、不碰宿主）
  * 构建时原样拼进 ZOD 脚本；测试时用 vm 载入。
@@ -1265,6 +1265,280 @@ function parseActText(text) {
   return out;
 }
 
+const DL_BOOK = {"repo": "1798547983tt/douluo-card-scripts", "major": 1, "min": "1.1.0", "cdns": ["https://testingcf.jsdelivr.net/gh/", "https://cdn.jsdelivr.net/gh/", "https://fastly.jsdelivr.net/gh/"], "channels": ["https://testingcf.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://cdn.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://fastly.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://raw.githubusercontent.com/1798547983tt/douluo-card-scripts/main/channels.json"], "wait": 4000};
+/* 斗罗世界书：远程安装与更新（设计见 变量系统/远程世界书/设计.md）
+ * 卡里可以不带世界书（轻量版），开局页或剧情窗口面板从 jsDelivr 下载整本，按酒馆自己“导入卡内世界书”的三步写进去：
+ *   convertCharacterBook → saveWorldInfo(名, 数据, true) → updateWorldInfoList（都在 SillyTavern.getContext() 里）。
+ * 已经有书时只按规则更新：没动过的原版条目换成新版，玩家或创意工坊改过的不动（planBookUpdate）。
+ * 前半是纯函数（tests/世界书测试.cjs 直接载入），后半 bookFlow 是下载与写入，酒馆接口都从参数传进来。
+ * build.py 在本段之前注入 DL_BOOK：{ repo, major, min, cdns, channels, wait }（和远程脚本同一个仓库、同一套版本）。
+ * 开局（宿主.js）和剧情窗口（剧情窗口.js）各带一份；两边同时写由主窗口上的 __DL_BOOK_BUSY__ 挡住。
+ */
+const BOOK_NAME = '斗罗宇宙';
+const BOOK_STAMP = '斗罗世界书版本';
+const BOOK_BUSY = '__DL_BOOK_BUSY__';
+
+/** 53 位内容哈希（cyrb53，逐个 UTF-16 码元），14 位十六进制。
+ * 不用 SHA-256：酒馆用局域网 http 打开时没有 crypto.subtle。Python 侧 远程/远程.py 的 h53 是同一份算法（测试里对过）。 */
+function h53(str) {
+  const s = String(str);
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+}
+
+const bookEntries = (data) => (data && data.entries && typeof data.entries === 'object' ? data.entries : {});
+const byUid = (entries) => Object.values(entries).filter((e) => e && typeof e === 'object').sort((a, b) => Number(a.uid) - Number(b.uid));
+
+/** 书里的版本戳（酒馆格式的整本数据）：{ 书版本, 标签, 条数 }；没有或坏了就是 null */
+function stampOf(data) {
+  const e = byUid(bookEntries(data)).find((x) => x.comment === BOOK_STAMP);
+  if (!e) return null;
+  try {
+    const v = JSON.parse(String(e.content || ''));
+    return v && typeof v.书版本 === 'string' && v.书版本 ? v : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+const mb = (bytes) => (Number(bytes) > 0 ? Math.max(0.1, Math.round(Number(bytes) / 1048576 * 10) / 10) : null);
+
+/** 书的状态：没装 / 最新 / 有新版 / 查不到。
+ * has：主世界书名字在、文件也在（酒馆助手只看卡上写的名字，不管文件在不在）；manifest：仓库里的清单，没拿到是 null。 */
+function bookState({ has, data, manifest, error }) {
+  const stamp = has ? stampOf(data) : null;
+  const size = manifest ? mb(manifest.传输字节 || manifest.字节) : null;
+  if (!has) {
+    return manifest
+      ? { 状态: '没装', 可开局: false, 文字: `世界书还没装${size ? `（下载约 ${size} MB）` : ''}：装好才能开局。`, 动作: '下载并安装' }
+      : { 状态: '没装', 可开局: false, 文字: `世界书还没装，也连不上下载地址${error ? `（${error}）` : ''}。检查网络后重试，或者改用完整版卡。`, 动作: '重试' };
+  }
+  const label = stamp ? stamp.标签 || stamp.书版本 : '版本未知';
+  if (!manifest) return { 状态: '查不到', 可开局: true, 文字: `世界书 ${label}：查不到有没有新版${error ? `（${error}）` : ''}，不影响开局。`, 动作: null, 戳: stamp };
+  if (stamp && stamp.书版本 === manifest.书版本) return { 状态: '最新', 可开局: true, 文字: `世界书 ${label}，已是最新。`, 动作: null, 戳: stamp };
+  return {
+    状态: '有新版', 可开局: true, 戳: stamp, 动作: '更新',
+    文字: stamp ? `世界书有新版 ${manifest.标签}（现在是 ${label}）：更新会保留你改过的条目。` : `世界书有新版 ${manifest.标签}（现在这本没有版本戳，是从老卡导进来的）：更新会保留认不出来的条目。`,
+  };
+}
+
+/** 已有的书按新版更新（都是酒馆格式的 entries：uid → 条目）。
+ * known：{ 条目名: [原版正文 h53, …] }，历次正式版本里出现过的正文；force：要强行用新版覆盖的条目名。
+ * 规则（设计 §3.4）：按条目名配对，同名多条按 uid 先后配；
+ *   没动过（正文在 known 里）或在 force 里 → 换成新版整条，保留 uid、开关（disable）和显示顺序；改过 → 不动，记进“保留”；
+ *   新版多出来的 → 新增，uid 接在最后；新版没有了、而且没动过的原版 → 删；玩家和工坊自己加的 → 不动；版本戳总是换新。 */
+function planBookUpdate(cur, next, known, force) {
+  const K = known && typeof known === 'object' ? known : {};
+  const F = new Set(force || []);
+  const isOrig = (e) => Array.isArray(K[e.comment]) && K[e.comment].includes(h53(e.content == null ? '' : e.content));
+  const curList = byUid(cur || {});
+  const pool = new Map();
+  for (const e of curList) {
+    const k = String(e.comment == null ? '' : e.comment);
+    if (!pool.has(k)) pool.set(k, []);
+    pool.get(k).push(e);
+  }
+  const out = {};
+  const used = new Set();
+  const 报告 = { 更新: 0, 新增: 0, 删除: 0, 不变: 0, 保留: [] };
+  let nextUid = curList.reduce((m, e) => Math.max(m, Number(e.uid) + 1), 0);
+  const same = (a, b) => {
+    const strip = ({ uid, disable, displayIndex, ...rest }) => rest; // eslint-disable-line no-unused-vars
+    return JSON.stringify(strip(a)) === JSON.stringify(strip(b));
+  };
+  for (const n of byUid(next || {})) {
+    const k = String(n.comment == null ? '' : n.comment);
+    const c = (pool.get(k) || []).find((x) => !used.has(x));
+    if (c) used.add(c);
+    if (!c) {
+      const uid = nextUid;
+      nextUid += 1;
+      out[uid] = { ...n, uid, displayIndex: uid };
+      报告.新增 += 1;
+    } else if (k === BOOK_STAMP || isOrig(c) || F.has(k)) {
+      const e = { ...n, uid: c.uid, displayIndex: c.displayIndex == null ? n.displayIndex : c.displayIndex };
+      if (k !== BOOK_STAMP) e.disable = c.disable;
+      out[c.uid] = e;
+      if (same(c, e)) 报告.不变 += 1;
+      else 报告.更新 += 1;
+    } else {
+      out[c.uid] = c;
+      报告.保留.push(k);
+    }
+  }
+  const nextNames = new Set(byUid(next || {}).map((n) => String(n.comment == null ? '' : n.comment)));
+  for (const c of curList) {
+    if (used.has(c)) continue;
+    if (!nextNames.has(String(c.comment)) && isOrig(c)) 报告.删除 += 1;
+    else out[c.uid] = c;
+  }
+  return { entries: out, 报告 };
+}
+
+/** 清单：{ 名, 书版本, 标签, 条数, 字节, 传输字节?, 分片: [{ 文件, 条数, 字节, h53 }], 已知原版 } */
+function checkManifest(m) {
+  const bad = (why) => { throw new Error('世界书清单不对：' + why); };
+  if (!m || typeof m !== 'object') bad('不是对象');
+  if (typeof m.书版本 !== 'string' || !/^[0-9a-f]{12}$/.test(m.书版本)) bad('书版本');
+  if (!Array.isArray(m.分片) || !m.分片.length) bad('分片');
+  let n = 0;
+  for (const p of m.分片) {
+    if (!p || typeof p.文件 !== 'string' || !/^part-\d{2}\.json$/.test(p.文件)) bad('分片文件名');
+    if (typeof p.h53 !== 'string' || !/^[0-9a-f]{14}$/.test(p.h53)) bad('分片哈希');
+    if (!Number.isInteger(p.条数) || p.条数 <= 0) bad('分片条数');
+    n += p.条数;
+  }
+  if (n !== m.条数) bad('条数合计');
+  if (!m.已知原版 || typeof m.已知原版 !== 'object') bad('已知原版');
+  return m;
+}
+
+/** 一个分片：哈希、条数、每条的字段都要对（镜像返回错误页、下到一半断了、拿错文件都会在这里被挡下） */
+function checkPart(text, meta) {
+  if (h53(text) !== meta.h53) throw new Error(`${meta.文件} 内容不完整或不是这一版`);
+  let list;
+  try { list = JSON.parse(text); } catch (_) { throw new Error(`${meta.文件} 不是 JSON`); }
+  if (!Array.isArray(list) || list.length !== meta.条数) throw new Error(`${meta.文件} 条数不对`);
+  for (const e of list) {
+    if (!e || !Number.isInteger(e.id) || typeof e.comment !== 'string' || typeof e.content !== 'string' || !Array.isArray(e.keys)) {
+      throw new Error(`${meta.文件} 里有条目格式不对`);
+    }
+  }
+  return list;
+}
+
+/** 下载与写入。deps：{ W 主窗口, cfg: DL_BOOK, ctx() 酒馆上下文, api(name) 酒馆助手函数, generating() 正在生成？ } */
+function bookFlow(deps) {
+  const { W, cfg } = deps;
+  const HEAD_WAIT = (cfg && cfg.headWait) || 15000;
+  let memoManifest = null; // { ver, promise }
+  let memoEntries = null; // { 书版本, list }
+
+  async function version() {
+    try {
+      const R = W.__DL_REMOTE_V1__;
+      if (R && typeof R.version === 'function') return await R.version(cfg);
+    } catch (_) { /* 解析器出错就用保底版本 */ }
+    return cfg.min;
+  }
+  /** 按镜像顺序取一个文件，check 不过（错误页、断了、旧缓存）就换下一个镜像；只等响应头，正文下载不设上限 */
+  async function getChecked(path, ver, check) {
+    const errors = [];
+    for (const cdn of cfg.cdns) {
+      const url = cdn + cfg.repo + '@' + ver + '/dist/book/' + path;
+      const ac = new W.AbortController();
+      const t = W.setTimeout(() => ac.abort(), HEAD_WAIT);
+      try {
+        const r = await W.fetch(url, { signal: ac.signal });
+        W.clearTimeout(t);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return check(await r.text());
+      } catch (e) {
+        W.clearTimeout(t);
+        errors.push(cdn.replace(/^https:\/\/|\/gh\/$/g, '') + ' ' + (e && e.name === 'AbortError' ? '超时' : (e && e.message) || e));
+      }
+    }
+    throw new Error(errors.join('；'));
+  }
+  async function manifest() {
+    const ver = await version();
+    if (memoManifest && memoManifest.ver === ver) return memoManifest.promise;
+    const promise = getChecked('manifest.json', ver, (t) => checkManifest(JSON.parse(t)));
+    memoManifest = { ver, promise };
+    promise.catch(() => { if (memoManifest && memoManifest.promise === promise) memoManifest = null; });
+    return promise;
+  }
+  async function download(m, progress) {
+    if (memoEntries && memoEntries.书版本 === m.书版本) return memoEntries.list;
+    const ver = await version();
+    const list = [];
+    for (let i = 0; i < m.分片.length; i += 1) {
+      const p = m.分片[i];
+      progress({ 步: '下载', i, n: m.分片.length });
+      let part = null, lastErr = null;
+      for (let k = 0; k < 2 && !part; k += 1) { // 三个镜像都不行就整轮再试一次
+        try { part = await getChecked(p.文件, ver, (t) => checkPart(t, p)); } catch (e) { lastErr = e; }
+      }
+      if (!part) throw lastErr || new Error('下载失败');
+      for (const e of part) list.push(e);
+    }
+    if (list.length !== m.条数) throw new Error('世界书条数不对');
+    memoEntries = { 书版本: m.书版本, list };
+    return list;
+  }
+  const th = (name) => { const f = deps.api(name); if (!f) throw new Error(`酒馆助手里找不到 ${name}：请更新酒馆助手。`); return f; };
+  const st = () => {
+    const c = deps.ctx();
+    for (const f of ['convertCharacterBook', 'saveWorldInfo', 'loadWorldInfo', 'updateWorldInfoList']) {
+      if (!c || typeof c[f] !== 'function') throw new Error(`这个酒馆版本不支持脚本安装世界书（缺 ${f}）：请改用完整版卡，或更新酒馆。`);
+    }
+    return c;
+  };
+  function where() {
+    const names = th('getWorldbookNames')() || [];
+    const cb = th('getCharWorldbookNames')('current') || {};
+    const primary = cb.primary || null;
+    return { names, primary, additional: Array.isArray(cb.additional) ? cb.additional : [], target: primary || BOOK_NAME, has: !!(primary && names.includes(primary)) };
+  }
+  async function status() {
+    const w = where();
+    const data = w.has ? await st().loadWorldInfo(w.target) : null;
+    let m = null, error = '';
+    try { m = await manifest(); } catch (e) { error = (e && e.message) || String(e); }
+    return { ...bookState({ has: w.has, data, manifest: m, error }), 书名: w.target, 清单: m };
+  }
+  async function write(fn) {
+    if (deps.generating && deps.generating()) throw new Error('AI 正在生成，等它停下再装世界书。');
+    if (W[BOOK_BUSY]) throw new Error('世界书正在写入，稍等再试。');
+    W[BOOK_BUSY] = true;
+    try { return await fn(); } finally { W[BOOK_BUSY] = false; }
+  }
+  /** 没书时装整本；有书时更新。force：要强行用新版覆盖的条目名（更新报告里“保留”的那些） */
+  async function apply(progress = () => {}, force = null) {
+    const c = st();
+    const m = await manifest();
+    const list = await download(m, progress);
+    progress({ 步: '写入' });
+    return write(async () => {
+      const w = where();
+      const next = c.convertCharacterBook({ name: w.target, entries: JSON.parse(JSON.stringify(list)) });
+      delete next.originalData; // 酒馆只在编辑器同步关键词时可选地用它，留着世界书文件就多存一份原文
+      let 报告;
+      if (!w.has) {
+        await c.saveWorldInfo(w.target, next, true);
+        报告 = { 安装: Object.keys(next.entries).length };
+      } else {
+        const cur = JSON.parse(JSON.stringify((await c.loadWorldInfo(w.target)) || {}));
+        const plan = planBookUpdate(bookEntries(cur), next.entries, m.已知原版, force);
+        delete cur.originalData;
+        await c.saveWorldInfo(w.target, { ...cur, entries: plan.entries }, true);
+        报告 = plan.报告;
+      }
+      await c.updateWorldInfoList();
+      if (!w.primary) await th('rebindCharWorldbooks')('current', { primary: w.target, additional: w.additional });
+      return { 书名: w.target, 标签: m.标签, ...报告 };
+    });
+  }
+  return { status, apply, manifest, version };
+}
+
+/** 报告写成一句话 */
+function bookReportText(r) {
+  if (!r) return '';
+  if (r.安装) return `世界书 ${r.标签 || ''} 装好了：${r.安装} 条。`;
+  const bits = [`更新 ${r.更新} 条`, r.新增 ? `新增 ${r.新增} 条` : '', r.删除 ? `删掉原版已去掉的 ${r.删除} 条` : '', r.保留.length ? `保留你改过的 ${r.保留.length} 条` : ''].filter(Boolean);
+  return `世界书已更新到 ${r.标签 || '新版'}：${bits.join('，')}。`;
+}
+
 /* 斗罗剧情窗口（酒馆助手脚本）
  * build.py 在本段之前注入：共用/规则.js、ACT_INDEX（幕索引）、开局/窗口.js。
  * 规则见 设计决定.md §16.2、ADR 0004：
@@ -1276,6 +1550,8 @@ function parseActText(text) {
  * 叙事核心（设计决定 §22）：当前聊天选了哪个核心（聊天变量“斗罗开局”里的开局记录为准，其次变量 叙事核心.核心），
  *   就只开“叙事核心·该核心·…”那几条，别的核心的条目关掉；和人物条目一样不看“自动”开关，和幕条目放在同一次写入里。
  * 世界观条目（世界观/规划.md §8）：通用一直开，当前部的开、别的部关；所在地命中的地区条目临时改蓝灯。同人物条目，不看“自动”开关。
+ * 世界书（开局/世界书.js，build.py 在本段之前注入 DL_BOOK 和它）：面板里显示状态，没装时下载安装、有新版时按规则更新；
+ *   正在写世界书（主窗口 __DL_BOOK_BUSY__）时本脚本跳过这一轮同步，免得两边同时整本写回。
  * 脚本按钮“剧情窗口”打开面板；设置存脚本变量。
  */
 (function () {
@@ -1329,7 +1605,14 @@ function parseActText(text) {
     };
   }
   async function saveSettings(patch) { await need('insertOrAssignVariables')(patch, { type: 'script' }); }
-  const primaryBook = () => { try { const f = api('getCharWorldbookNames'); const r = f && f('current'); return (r && r.primary) || null; } catch (_) { return null; } };
+  // 主世界书：卡上写着名字、而且这本书真的在（酒馆助手只看卡上的名字；轻量版卡在装世界书之前文件不在）
+  const primaryBook = () => {
+    try {
+      const f = api('getCharWorldbookNames'); const r = f && f('current'); const p = (r && r.primary) || null;
+      const g = api('getWorldbookNames'); const names = g ? g() : null;
+      return p && (!Array.isArray(names) || names.includes(p)) ? p : null;
+    } catch (_) { return null; }
+  };
   const extraBooks = () => {
     try {
       const f = api('getCharWorldbookNames');
@@ -1354,7 +1637,8 @@ function parseActText(text) {
   }
 
   // ───────── 同步 ─────────
-  const status = { book: null, plan: null, wp: null, open: null, note: '', busy: false, people: null, core: null, gf: null };
+  const status = { book: null, plan: null, wp: null, open: null, note: '', busy: false, people: null, core: null, gf: null, bookInfo: null, bookKept: null };
+  const books = bookFlow({ W, cfg: DL_BOOK, ctx, api, generating: () => generating });
   const OPENING_KEY = '斗罗开局'; // 开局脚本写的开局记录（聊天变量）
   function openingRecord() {
     try { const v = need('getVariables')({ type: 'chat' }); const r = v && v[OPENING_KEY]; return r && typeof r === 'object' ? r : null; } catch (_) { return null; }
@@ -1394,6 +1678,7 @@ function parseActText(text) {
   let lastAnchor = null;
   async function sync({ skipTail = false, force = false } = {}) {
     const s = settings();
+    if (W[BOOK_BUSY]) return { reason: 'bookBusy' };
     const entries = await inspect(skipTail);
     if (!entries) return { reason: 'book' };
     // 人物、世界观、叙事核心与金手指条目始终跟当前聊天走，不看“自动”开关
@@ -1440,7 +1725,8 @@ function parseActText(text) {
     if (!r) return status.note;
     if (r.reason === 'off') return '自动已关：幕条目没动（人物条目照常跟当前部走）。';
     if (r.peopleOnly) return `自动已关：幕条目没动；人物、世界观与叙事核心条目改了 ${r.changed} 个开关。`;
-    if (r.reason === 'book') return '这张卡还没有绑定世界书，没法开关幕条目。';
+    if (r.reason === 'book') return '世界书还没装（或者没绑定），没法开关条目：点上面的“下载并安装”。';
+    if (r.reason === 'bookBusy') return '世界书正在写入，这一轮先不动。';
     if (r.reason === 'unknown') return '认不出当前幕：变量里没有当前幕和外界日期，最新回复也没写 <story> 幕签。世界书没动。';
     return r.changed ? `改了 ${r.changed} 个条目的开关。` : '窗口没变，世界书没动。';
   };
@@ -1539,12 +1825,31 @@ html[data-dl-theme="senlin"] #dlw-panel{--bg:#0F1A15;--bg2:#15231C;--ink:#E6E0CF
       el('p', { class: 'src', text: status.core.核心 ? `${((typeof coreInfoOf === 'function' ? coreInfoOf(status.core.核心, W) : CORE_INFO[status.core.核心]) || {}).全名 || status.core.核心}：开着 ${status.core.开着} 条（跟着本聊天的开局选择，不受自动开关影响）` : '本聊天没选叙事核心，核心条目全关。' }));
     if (status.gf && (status.gf.金手指 || status.gf.开着)) body.append(el('h6', { text: '金手指' }),
       el('p', { class: 'src', text: status.gf.金手指 ? `${status.gf.金手指}：开着 ${status.gf.开着} 条（跟着本聊天的开局选择，不受自动开关影响）` : '本聊天没选金手指，金手指条目全关。' }));
-    if (!status.book) body.append(el('p', { class: 'note', text: '这张卡还没有绑定世界书，没法开关幕条目。' }));
+    const bk = status.bookInfo;
+    body.append(el('h6', { text: '世界书' }), el('p', { class: 'src', text: bk ? bk.文字 : '正在检查…' }));
+    if (bk && bk.动作) body.append(el('button', { class: 'go', disabled: status.busy ? true : null, onclick: () => bookAct(null) }, bk.动作));
+    if (status.bookKept && status.bookKept.length) {
+      body.append(el('p', { class: 'src', text: `保留了你或创意工坊改过的 ${status.bookKept.length} 条：${status.bookKept.slice(0, 12).join('、')}${status.bookKept.length > 12 ? ' 等' : ''}。` }),
+        el('button', { class: 'go', disabled: status.busy ? true : null, onclick: () => bookAct(status.bookKept) }, '这些也换成新版（工坊作品要重装）'));
+    }
     body.append(el('p', { class: 'note', text: status.note || '' }));
     const go = el('button', { class: 'go', disabled: status.busy ? true : null, onclick: () => act(async () => { status.note = noteOf(await sync({ force: true })); }) }, status.busy ? '正在重算……' : '按当前楼层重算');
     panel.replaceChildren(
       el('header', {}, el('b', { text: '剧情窗口' }), el('button', { class: 'x', 'aria-label': '关闭', title: '关闭', onclick: () => togglePanel(false) }, '×')),
       body, el('footer', {}, go));
+  }
+  // 世界书：装、更新（force：把“保留”的那些也换成新版）。写完重算一次，按当前部和幕开关条目
+  function bookAct(force) {
+    return act(async () => {
+      const r = await books.apply((x) => { status.note = x.步 === '下载' ? `正在下载世界书（${x.i + 1}/${x.n}）…` : '正在写入世界书…'; render(); }, force);
+      status.bookKept = r.保留 && r.保留.length ? r.保留 : null;
+      status.bookInfo = await books.status();
+      const done = noteOf(await sync({ force: true }));
+      status.note = bookReportText(r) + ' ' + done;
+    });
+  }
+  function refreshBookInfo() {
+    books.status().then((x) => { status.bookInfo = x; render(); }, (e) => { status.bookInfo = { 文字: `世界书状态读不出来：${(e && e.message) || e}` }; render(); });
   }
   async function act(fn) {
     status.busy = true; status.note = ''; render();
@@ -1564,7 +1869,7 @@ html[data-dl-theme="senlin"] #dlw-panel{--bg:#0F1A15;--bg2:#15231C;--ink:#E6E0CF
     const show = force == null ? panel.hidden : force;
     panel.hidden = !show;
     layer.hidden = !show;
-    if (show) { status.note = ''; status.busy = true; render(); run(() => inspect(false)).then(() => { status.busy = false; render(); }); }
+    if (show) { status.note = ''; status.busy = true; render(); refreshBookInfo(); run(() => inspect(false)).then(() => { status.busy = false; render(); }); }
   }
 
   // ───────── 什么时候算 ─────────

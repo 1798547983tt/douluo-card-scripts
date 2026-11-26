@@ -1,4 +1,4 @@
-// 斗罗远程正文 workshop.js 1.0.0
+// 斗罗远程正文 workshop.js 1.1.0
 // 斗罗创意工坊卡内入口：由 创意工坊/site/entry/build.mjs 生成，源码在 entry/src、shared 和 变量系统/源码/开局/存档.js，别手改。连接 https://douluo.730107129.xyz
 (() => {
 'use strict';
@@ -118,6 +118,10 @@ function isCoreScript(name) {
 }
 const isEntryScript = name => String(name ?? '') === ENTRY_SCRIPT;
 
+/** 主世界书里的版本戳条目：开局页装、更新世界书时靠它认版本（远程世界书）。作品不能替换、停用它，也不能新添同名条目 */
+const BOOK_STAMP = '斗罗世界书版本';
+const isBookStamp = name => String(name ?? '') === BOOK_STAMP;
+
 /** 头像的“身份”：全名 + 变体名（变体可空）。同一身份 = 替换内置那张 */
 const avatarKey = (全名, 变体) => `${String(全名 ?? '').trim()}|${String(变体 ?? '').trim()}`;
 
@@ -187,7 +191,7 @@ function luckSummary(data) {
     })),
   };
 }
-return { ENTRY_SCRIPT, CORE_SCRIPTS, BUILTIN_CORES, NO_CORE, RESERVED_CORE_NAMES, BUILTIN_GFS, NO_GF, RESERVED_GF_NAMES, BUILTIN_GF_KEYS, BUILTIN_LUCK_LIST, BUILTIN_LUCK_NAMES, LUCK_FORMAT, LUCK_TIERS, LUCK_BAD_TIERS, LUCK_CATEGORIES, LUCK_TARGETS, LUCK_DEADLINE_TYPES, EXT_ID_RE, parseCoreEntryName, parseGfEntryName, isManagedExtEntry, CATEGORIES, categorize, replaceOnly, isCoreScript, isEntryScript, avatarKey, SAVE_FORMAT, SAVE_DRAFT_MAX, checkDraft, PART_TITLE, saveSummary, luckSummary };
+return { ENTRY_SCRIPT, CORE_SCRIPTS, BUILTIN_CORES, NO_CORE, RESERVED_CORE_NAMES, BUILTIN_GFS, NO_GF, RESERVED_GF_NAMES, BUILTIN_GF_KEYS, BUILTIN_LUCK_LIST, BUILTIN_LUCK_NAMES, LUCK_FORMAT, LUCK_TIERS, LUCK_BAD_TIERS, LUCK_CATEGORIES, LUCK_TARGETS, LUCK_DEADLINE_TYPES, EXT_ID_RE, parseCoreEntryName, parseGfEntryName, isManagedExtEntry, CATEGORIES, categorize, replaceOnly, isCoreScript, isEntryScript, BOOK_STAMP, isBookStamp, avatarKey, SAVE_FORMAT, SAVE_DRAFT_MAX, checkDraft, PART_TITLE, saveSummary, luckSummary };
 })();
 
 // shared/parts.js
@@ -2302,7 +2306,7 @@ const m_entry_src_core = (() => {
 // - 头像不动原版（只是叠在内置图上的登记，见 avatars.js），存档进开局页的存档列表（见 saves.js），都不用备份。
 
 const { analyzeCode } = m_shared_codeflags;
-const { isCoreScript, isManagedExtEntry } = m_shared_douluo;
+const { isBookStamp, isCoreScript, isManagedExtEntry } = m_shared_douluo;
 const { KINDS, KIND_OPS, LIMITS, PartError, hashInput, normalizePart, oneLine } = m_shared_parts;
 const { AVATAR_DIR, avatarOwner, bytesOf, readAvatarRows, writeAvatarRows } = m_entry_src_avatars;
 const { EntryError } = m_entry_src_host;
@@ -2319,6 +2323,9 @@ const MAX_PARTS = 3000;
 const MAX_BATCH = 30;
 // 斗罗卡主世界书里一定有的条目：角色改过名也能认出来
 const TARGET_MARK = '斗罗力量体系';
+// 轻量版卡：卡上写着主世界书的名字，书要到开局页下载安装（远程世界书）
+const NO_BOOK_NOTE = name => `主世界书「${name}」还没装：先在开局页点“下载并安装”，装好再来导入；这一项会跳过`;
+const BOOK_VER = /^[0-9a-f]{12}$/;
 const CHANGED = '导入途中这一项被改动过，没有写入';
 const hexOf = bytes => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 
@@ -2384,9 +2391,27 @@ class Local {
     this.charName = tv.charName() ?? '';
     this.cardVer = tv.cardVersion?.() ?? null;
     const books = tv.charBooks() ?? {};
-    this.primary = books.primary || null;
+    // 卡上写着书名、文件却不在（轻量版卡还没装世界书）：当作没有主世界书，另记下名字好提示
+    const named = books.primary || null;
+    this.primary = named && this.tv.bookNames().includes(named) ? named : null;
+    this.primaryMissing = named && !this.primary ? named : null;
     this.books = new Map();
     this.memo = new WeakMap();
+  }
+
+  /** 记进导入记录的版本：卡的版本戳 + 主世界书版本戳里的书版本。世界书单独更新过也算卡换过（recordHealth 的 stale） */
+  async version() {
+    if (this._ver !== undefined) return this._ver;
+    let book = null;
+    try {
+      const stamp = (await this.book(this.primary)).find(e => isBookStamp(e.name));
+      const v = stamp ? JSON.parse(stamp.content)?.书版本 : null;
+      if (BOOK_VER.test(String(v))) book = v;
+    } catch {
+      /* 戳坏了当没有 */
+    }
+    this._ver = book ? `${this.cardVer ?? ''}|${book}` : this.cardVer;
+    return this._ver;
   }
 
   async book(name) {
@@ -2502,7 +2527,8 @@ async function recordHealth(local, rec) {
     h[s]++;
     h.of.set(it, s);
   }
-  const verMoved = Boolean(local.cardVer) && (rec.cardVer ?? null) !== local.cardVer;
+  const ver = await local.version();
+  const verMoved = Boolean(ver) && (rec.cardVer ?? null) !== ver;
   h.stale = h.tracked > 0 && ((verMoved && h.ok < h.tracked) || (h.lost > 0 && h.ok === 0));
   return h;
 }
@@ -2570,12 +2596,14 @@ async function partState(local, state, work, mineKeys, ownScriptId, p) {
   if (p.op === 'add') {
     if (p.kind === 'entry') {
       if (work.wbMode === 'separate') return { state: 'ready' };
-      if (!local.primary) return { state: 'missing', note: '这个角色没有绑定主世界书，条目没地方放，会跳过' };
+      if (!local.primary) return { state: 'missing', note: local.primaryMissing ? NO_BOOK_NOTE(local.primaryMissing) : '这个角色没有绑定主世界书，条目没地方放，会跳过' };
+      if (isBookStamp(p.name)) return { state: 'missing', note: '世界书版本戳归开局页管，作品不能新添同名条目，会跳过' };
     }
     return (await hasTwin(local, p, mineKeys)) ? { state: 'same', note: '你本地已经有一模一样的，会跳过' } : { state: 'ready' };
   }
   const hit = await locate(local, p.kind, p.target);
-  if (!hit) return { state: 'missing' };
+  if (!hit) return p.kind === 'entry' && local.primaryMissing ? { state: 'missing', note: NO_BOOK_NOTE(local.primaryMissing) } : { state: 'missing' };
+  if (p.kind === 'entry' && isBookStamp(hit.obj.name)) return { state: 'missing', note: '这是世界书版本戳：开局页靠它认世界书版本，作品不能替换或停用，会跳过' };
   if (p.kind === 'script' && ownScriptId && hit.obj.id === ownScriptId) {
     return { state: 'missing', note: '这是「斗罗创意工坊」脚本本身：为了随时能卸载，它不能被作品替换或停用，会跳过' };
   }
@@ -3159,7 +3187,7 @@ function createCore({ tv, confirm, saves = null, changed = () => {} }) {
       importedAt: Date.now(),
       charId: local.charId,
       charName: local.charName,
-      cardVer: local.cardVer,
+      cardVer: await local.version(),
       wbMode: work.wbMode,
       book: null,
       createdBook: false,

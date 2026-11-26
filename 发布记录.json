@@ -46,5 +46,66 @@
       "gf-kuashidailiaotianqun.js": "斗罗金手指·跨时代聊天群",
       "sect-bloodline.js": "斗罗宗门血脉"
     }
+  },
+  "1.1.0": {
+    "files": {
+      "floor.js": "c581886c0481383a596147201955001f49dc055b10bd86b8b02e3d6f567cd5d2",
+      "zod.js": "6f13bca6bc23596c06c4fbf437acb665a20d723f87f82c8114ccf8af56cac5fc",
+      "story-window.js": "6ca9ffc1b69450fc74a3345aa59bd9bdaa01350a703f9b4265d0e5885c27d0e7",
+      "opening.js": "53b40ea0b8c597d6e4f85980ccfe96b6aa8fe85185714b9cb7625e0b31835f3c",
+      "workshop.js": "6cef0737ffc4ce40ff3618b3692cab7a37cf0a3c001550edb0fedae9eecdfe4f",
+      "phone.js": "2883550a1799d8954ea6fdbc1f41259a198723189840138c9f62acd73a79b41b",
+      "status-bar.js": "c51e6c13098b88da4d12aaaf762a5de1ff06657873463211b0d6d2eaaf433273",
+      "core-wannianheimu.js": "d25991226f45bdbf8adeab43f69b5b2b70f2ada6204a9059358661f9849fbbb8",
+      "core-quanyuanjiahao.js": "143d84af496fadc7047880312301b9ba672eac2dea91b403eb6376249876ad5a",
+      "core-shenjiewuran.js": "553161e38311f16d7a2edcb533ea2fa05f6d0a5d9842cc17f85600a3018c781f",
+      "core-zuojianqiukong.js": "dcdc7a3b4386de2d70f56facfd32a0201f03076091d0afb23023a50db308422f",
+      "core-zhushenweiguan.js": "847366a710dea149a7678e8d70b457b67af566de768818b740d4b457fbed8172",
+      "core-yiguanxiuluo.js": "7f6500b6ba28b3187ebc866edbe7f58688363813a0105cc8c33e2f188b979b05",
+      "core-zhutianliechang.js": "d9608b30fc2b8b354857c1e55f8f3f33a6c8a2019fc47cfca1d0c2793bc45cf6",
+      "gf-weilaimoniqi.js": "097a4e7b4cd6959463b99ff955ff7ac22fd81b7b29e13e32ea57117a8bda92e5",
+      "gf-shenlanjiadian.js": "da76109d8f3d484cf0ddf751e699def06dd79cdaae5984cb8fe6d3d91e596755",
+      "gf-zhutiandaida.js": "ab74a0140e98388358c82f731d494cec9944a659db93af84008c1d53d0b86c6a",
+      "gf-qiandaodaka.js": "b225ef9d67c33b60b5a1b5c68319dab1f7942d6c0928b68149c292ba687d5dfb",
+      "gf-choujiang.js": "347efe9744e0decfedcc098dda9c1a2ceb9271f6585b03e49eeb53b97d7127df",
+      "gf-kuashidailiaotianqun.js": "7dbbc3d4b7179e5681a557756dcced7d6461ed98686c9ddabf0c59ea77c226db",
+      "sect-bloodline.js": "796086868f72bba5e04b32d8278d153d6323fff8bc1ff79049f9bf92f40c2b6f"
+    },
+    "scripts": {
+      "floor.js": "斗罗楼层",
+      "zod.js": "斗罗ZOD",
+      "story-window.js": "斗罗剧情窗口",
+      "opening.js": "斗罗开局",
+      "workshop.js": "斗罗创意工坊",
+      "phone.js": "斗罗小手机",
+      "status-bar.js": "斗罗状态栏",
+      "core-wannianheimu.js": "斗罗核心·万年黑幕",
+      "core-quanyuanjiahao.js": "斗罗核心·全员嘉豪",
+      "core-shenjiewuran.js": "斗罗核心·神界污染",
+      "core-zuojianqiukong.js": "斗罗核心·做减求空",
+      "core-zhushenweiguan.js": "斗罗核心·诸神围观",
+      "core-yiguanxiuluo.js": "斗罗核心·衣冠修罗",
+      "core-zhutianliechang.js": "斗罗核心·诸天猎场",
+      "gf-weilaimoniqi.js": "斗罗金手指·未来模拟器",
+      "gf-shenlanjiadian.js": "斗罗金手指·深蓝加点",
+      "gf-zhutiandaida.js": "斗罗金手指·诸天代打",
+      "gf-qiandaodaka.js": "斗罗金手指·签到打卡",
+      "gf-choujiang.js": "斗罗金手指·抽奖",
+      "gf-kuashidailiaotianqun.js": "斗罗金手指·跨时代聊天群",
+      "sect-bloodline.js": "斗罗宗门血脉"
+    },
+    "book": {
+      "书版本": "5cf4db25475f",
+      "标签": "2026.11.26.2",
+      "条数": 1394,
+      "字节": 19442143,
+      "files": {
+        "manifest.json": "34794f17d01601d4db31c69337d8ceb0ad8ff8c296f422a75706893af017f1a6",
+        "part-01.json": "84865e5ac503cdb21da3bef7ec4415288f178941e1daf54e59d2f4d1791cce71",
+        "part-02.json": "97a7733da5e2cee638b7617981a9598e9d48b3474e05ec36a000fdb4eb930257",
+        "part-03.json": "3578604345928c082eb4143cb8d00a89a55ad0becb6c86b6aec44d4cf9b123f2",
+        "part-04.json": "0fe793e94fd19160356e71717da6b4b629304011734ff5b8555214c7c242e297"
+      }
+    }
   }
 }

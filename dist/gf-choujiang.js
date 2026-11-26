@@ -1,4 +1,4 @@
-// 斗罗远程正文 gf-choujiang.js 1.0.0
+// 斗罗远程正文 gf-choujiang.js 1.1.0
 // 斗罗金手指·抽奖：由 源码/build.py 生成，勿手改。逻辑见 源码/金手指/类型/抽奖.js，主页面见 源码/金手指/页面/，接线见 源码/金手指/入口.js。
 import { registerMvuSchema } from "https://testingcf.jsdelivr.net/gh/StageDog/tavern_resource/dist/util/mvu_zod.js";
 

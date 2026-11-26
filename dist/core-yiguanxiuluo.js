@@ -1,4 +1,4 @@
-// 斗罗远程正文 core-yiguanxiuluo.js 1.0.0
+// 斗罗远程正文 core-yiguanxiuluo.js 1.1.0
 // 斗罗核心·衣冠修罗：由 源码/build.py 生成，勿手改。结构见 源码/叙事核心/核心/衣冠修罗.js，主页面代码见 源码/叙事核心/页面/，接线见 源码/叙事核心/入口.js。
 import { registerMvuSchema } from "https://testingcf.jsdelivr.net/gh/StageDog/tavern_resource/dist/util/mvu_zod.js";
 
