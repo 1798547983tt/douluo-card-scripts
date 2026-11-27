@@ -1,4 +1,4 @@
-// 斗罗远程正文 story-window.js 1.1.0
+// 斗罗远程正文 story-window.js 2.1.0
 // 斗罗剧情窗口：由 源码/build.py 生成，勿手改。规则见 源码/开局/窗口.js，接线见 源码/开局/剧情窗口.js。
 /* 斗罗变量 · 共用规则（纯函数，不碰 z、不碰宿主）
  * 构建时原样拼进 ZOD 脚本；测试时用 vm 载入。
@@ -316,7 +316,26 @@ function normalLevel(p, part) {
       else if (w.品质 === '超神级' && base < 120) q = 5;
     }
   }
-  return Math.max(0, Math.round(base + q));
+  return Math.max(0, Math.round(base + q + peakBonus(p, part, base + q)));
+}
+// 极限阶位（§27.5，本卡规则）：只给 99 级、未成神的人；准半神 +0、半神 +2、准神 +4，精神力到神元境再 +1。
+// 斗4 100 级就是神级，这一加成在斗4 不越过 99（准神在斗4 叫“半步神级”，只作显示）
+const PEAK_TIERS = Object.freeze(['准半神', '半神', '准神']);
+const PEAK_BONUS = Object.freeze({ 准半神: 0, 半神: 2, 准神: 4 });
+function peakBonus(p, part, sofar) {
+  if (p.魂力等级 !== 99 || isTrueGod(p) || (p.神阶 && GOD_LEVEL[p.神阶])) return 0;
+  let b = PEAK_BONUS[p.极限阶位] || 0;
+  const sp = p.精神力 || {};
+  if (!sp.神识 && spiritRealm(sp.点数, part) === '神元境') b += 1;
+  if (part === '斗4') b = Math.max(0, Math.min(b, 99 - sofar));
+  return b;
+}
+// 极限阶位的显示：斗3（及神界、英雄）用原名；斗4 准神叫半步神级、另两层不另标；斗1、斗2 不出现这三个词
+function peakLabel(tier, part) {
+  if (!PEAK_TIERS.includes(tier)) return null;
+  if (part === '斗1' || part === '斗2') return null;
+  if (part === '斗4') return tier === '准神' ? '半步神级' : null;
+  return tier;
 }
 // 斗铠 1–6 字宿主等级衰减曲线：严格单调不倒挂，1–3 字凡间封顶 99，4 字准神（99+4字=105），6 字不单靠斗铠破 140 神王线
 const ARMOR_BONUS_PTS = Object.freeze({
@@ -406,8 +425,8 @@ function titleOf(p, part) {
   const L = p.魂力等级;
   if (!isNum(L)) return p.出身 === '魂兽' || isNum(p.修为年限) ? beastTitle(p.修为年限, p.凶兽) : '';
   if (L >= 100 && part === '斗4') return L >= 120 ? '超神' : L >= 110 ? '真神' : '神级';
-  if (L >= 99) return '极限斗罗';
-  if (L >= 95) return '超级斗罗';
+  if (L >= 99) return part === '斗1' ? '绝世斗罗' : '极限斗罗';
+  if (L >= 95) return part === '斗1' ? '巅峰斗罗' : '超级斗罗';
   // 卡在整十级时，已经拿到下一个魂环就算进了下一档（30 级三环＝魂尊）
   const idx = Math.max(Math.ceil(L / 10) - 1, Math.min(ringCount(p), Math.floor(L / 10)));
   return TITLES[clampN(idx, 0, 9)];
@@ -421,8 +440,32 @@ function ringCount(p) {
   }
   return n;
 }
+// 魂核（§27.5）：第一颗斗1、斗2、神界、英雄 90 级，斗3、斗4 70 级；99 级要第二颗。凝成、开裂、受损、封印都算有；只提醒，不拦升级
+const CORE_HELD = Object.freeze(['凝成', '开裂', '受损', '封印']);
+const coreGate = (part) => (part === '斗3' || part === '斗4' ? 70 : 90);
+const coresHeld = (p) => (Array.isArray(p && p.魂核) ? p.魂核.filter((c) => c && CORE_HELD.includes(c.阶段)).length : 0);
+const coresNeeded = (level, part) => (!isNum(level) ? 0 : level >= 99 ? 2 : level >= coreGate(part) ? 1 : 0);
 function nextHurdle(p, part, isHero) {
+  const res = ringHurdle(p, part, isHero);
   const L = p.魂力等级;
+  if (!res || !isNum(L) || (p.神途 && p.神途.神位) || (p.神阶 && GOD_LEVEL[p.神阶]) || L > 99) return res;
+  // NPC 没记过魂核时当资料不全，不提醒（同魂环）
+  if (!isHero && !(Array.isArray(p.魂核) && p.魂核.length)) return res;
+  const held = coresHeld(p), nowNeed = coresNeeded(L, part);
+  const ord = (n) => RING_ORD[n] || n;
+  // 魂核的话插在“；再往上需……”前面
+  const put = (txt) => ({ ...res, 说明: res.说明.includes('；再往上') ? res.说明.replace('；再往上', txt + '；再往上') : res.说明 + txt });
+  if (nowNeed > held) {
+    const why = held === 0 ? `${coreGate(part)} 级起要有魂核` : '99 级要第二魂核';
+    return put(`；缺第${ord(held + 1)}魂核（${why}，现有 ${held} 颗；不拦升级）`);
+  }
+  const T = res.等级;
+  if (isNum(T) && T <= 99 && coresNeeded(T, part) > held) return put(`，并凝第${ord(held + 1)}魂核`);
+  return res;
+}
+function ringHurdle(p, part, isHero) {
+  const L = p.魂力等级;
+  const peak = part === '斗1' ? '绝世斗罗' : '极限斗罗';
   const seat = p.神途 && p.神途.神位;
   if (!isNum(L)) {
     const y = p.修为年限;
@@ -437,8 +480,8 @@ function nextHurdle(p, part, isHero) {
     if (L >= 110) return { 等级: 120, 说明: '120 级 · 超神' };
     if (L >= 100) return { 等级: 110, 说明: '110 级 · 真神' };
     if (L >= 99) return { 等级: 100, 说明: '100 级 · 神级（第十阶）' };
-  } else if (L >= 99) return { 等级: null, 说明: '99 级 · 极限斗罗；再往上需继承神位' };
-  if (L >= 90) return { 等级: 99, 说明: part === '斗4' ? '99 级 · 极限斗罗' : '99 级 · 极限斗罗；再往上需神位' };
+  } else if (L >= 99) return { 等级: null, 说明: `99 级 · ${peak}；再往上需继承神位` };
+  if (L >= 90) return { 等级: 99, 说明: part === '斗4' ? `99 级 · ${peak}` : `99 级 · ${peak}；再往上需神位` };
   const rings = ringCount(p);
   // 等级已经越过了魂环数撑得住的瓶颈（不硬压，只提醒）。NPC 一个魂环都没记时当资料不全，不提醒。
   const owed = Math.min(9, Math.ceil(L / 10) - 1);
@@ -1177,6 +1220,26 @@ function sectPlan(entries, stat) {
 }
 
 /**
+ * 表情差分的格式条目（设计决定 §27.6）：让 AI 把对白写成 {名字}(装扮·表情)「…」、可选 <inner_voice>。
+ * 开关在状态栏 设置 → 表情差分（全局变量 斗罗表情.格式）：开＝一直开；关＝一直关；
+ * 自动＝这一部有人上传了表情图（或内置头像有带表情的变体）才开，没图时不让 AI 白写括号。
+ */
+const EXPR_ENTRY = '格式补充·表情差分';
+function exprWanted(format, has) {
+  if (format === '开') return true;
+  if (format === '关') return false;
+  return !!has;
+}
+function exprPlan(entries, on) {
+  const 改动 = [];
+  for (const e of entries || []) {
+    if (!e || e.name !== EXPR_ENTRY) continue;
+    if (Boolean(e.enabled) !== !!on) 改动.push({ uid: e.uid, name: e.name, enabled: !!on });
+  }
+  return { 改动, 开着: on ? 1 : 0 };
+}
+
+/**
  * 世界观条目（世界观/规划.md §8）：“世界观·通用”“世界观·<部>·总纲”“世界观·<部>·<地区或势力>”。
  * 通用条目一直开；当前部的总纲、地区、势力开，别的部的关。不受“自动”开关影响，认不出当前部时不动。
  * 所在地（变量 时空.地点）里含某条地区条目的触发词，那条临时改成蓝灯常驻；离开后改回绿灯关键词。
@@ -1265,7 +1328,7 @@ function parseActText(text) {
   return out;
 }
 
-const DL_BOOK = {"repo": "1798547983tt/douluo-card-scripts", "major": 1, "min": "1.1.0", "cdns": ["https://testingcf.jsdelivr.net/gh/", "https://cdn.jsdelivr.net/gh/", "https://fastly.jsdelivr.net/gh/"], "channels": ["https://testingcf.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://cdn.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://fastly.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://raw.githubusercontent.com/1798547983tt/douluo-card-scripts/main/channels.json"], "wait": 4000};
+const DL_BOOK = {"repo": "1798547983tt/douluo-card-scripts", "major": 2, "min": "2.1.0", "cdns": ["https://testingcf.jsdelivr.net/gh/", "https://cdn.jsdelivr.net/gh/", "https://fastly.jsdelivr.net/gh/"], "channels": ["https://testingcf.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://cdn.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://fastly.jsdelivr.net/gh/1798547983tt/douluo-card-scripts@main/channels.json", "https://raw.githubusercontent.com/1798547983tt/douluo-card-scripts/main/channels.json"], "wait": 4000};
 /* 斗罗世界书：远程安装与更新（设计见 变量系统/远程世界书/设计.md）
  * 卡里可以不带世界书（轻量版），开局页或剧情窗口面板从 jsDelivr 下载整本，按酒馆自己“导入卡内世界书”的三步写进去：
  *   convertCharacterBook → saveWorldInfo(名, 数据, true) → updateWorldInfoList（都在 SillyTavern.getContext() 里）。
@@ -1654,13 +1717,20 @@ function bookReportText(r) {
     chain = next;
     return next;
   };
+  // 表情差分：格式开关在全局变量 斗罗表情；有没有表情图问头像脚本（没启用时当没有）
+  function exprFormat() {
+    try { const v = need('getVariables')({ type: 'global' }); const x = v && v.斗罗表情; return x && typeof x === 'object' ? x.格式 : undefined; } catch (_) { return undefined; }
+  }
+  function exprHas(part) {
+    try { const lib = W.DLAvatars; return !!(lib && typeof lib.exprHas === 'function' && lib.exprHas(part || '')); } catch (_) { return false; }
+  }
   const isActName = (() => { const s = new Set(); for (const b of ACT_INDEX.部) for (const a of b.前史.concat(b.正篇)) s.add(a[0]); return (n) => s.has(n); })();
   async function inspect(skipTail) {
     status.book = primaryBook();
     const { stat, story } = latest(skipTail);
     status.plan = planWindow(ACT_INDEX, stat, story, settings().n);
     const part = personPart(stat, status.plan);
-    if (!status.book) { status.wp = null; status.open = []; status.people = null; status.world = null; status.core = null; status.gf = null; status.sect = null; return null; }
+    if (!status.book) { status.wp = null; status.open = []; status.people = null; status.world = null; status.core = null; status.gf = null; status.sect = null; status.expr = null; return null; }
     const entries = await need('getWorldbook')(status.book);
     status.wp = status.plan ? windowPlan(ACT_INDEX, entries, status.plan) : null;
     status.people = part ? { 部: part, ...personPlan(entries, part) } : null;
@@ -1672,6 +1742,7 @@ function bookReportText(r) {
     const gf = chatGf(rec, stat);
     status.gf = { 金手指: gf, ...gfPlan(entries, gf) };
     status.sect = sectPlan(entries, stat);
+    status.expr = exprPlan(entries, exprWanted(exprFormat(), exprHas(part)));
     status.open = entries.filter((e) => e.enabled && (isActName(e.name) || Object.values(INDEX_ENTRY).includes(e.name))).map((e) => e.name);
     return entries;
   }
@@ -1686,7 +1757,8 @@ function bookReportText(r) {
       .concat(status.world ? status.world.改动 : [])
       .concat(status.core ? status.core.改动 : [])
       .concat(status.gf ? status.gf.改动 : [])
-      .concat(status.sect ? status.sect.改动 : []);
+      .concat(status.sect ? status.sect.改动 : [])
+      .concat(status.expr ? status.expr.改动 : []);
     const windowOn = (s.auto || force) && status.plan;
     const changes = people.concat(windowOn ? status.wp.改动 : []);
     let extraChanged = 0;
@@ -1713,6 +1785,7 @@ function bookReportText(r) {
     if (status.core) status.core = { ...status.core, 改动: [] };
     if (status.gf) status.gf = { ...status.gf, 改动: [] };
     if (status.sect) status.sect = { ...status.sect, 改动: [] };
+    if (status.expr) status.expr = { ...status.expr, 改动: [] };
     const totalChanged = changes.length + extraChanged;
     if (!windowOn) return { changed: totalChanged, peopleOnly: true };
     status.wp = { ...status.wp, 改动: [] };
@@ -1913,7 +1986,7 @@ html[data-dl-theme="senlin"] #dlw-panel{--bg:#0F1A15;--bg2:#15231C;--ink:#E6E0CF
     else { try { const w = api('waitGlobalInitialized'); if (w) Promise.resolve(w('Mvu')).then(mvuOn, () => {}); } catch (_) { /* 没有 MVU 就只靠酒馆事件 */ } }
     try { const ev = api('getButtonEvent'); if (ev) listen(ev(BUTTON), () => togglePanel()); } catch (_) { /* 没有按钮接口 */ }
     const onWsChange = () => { if (!busy()) schedule(); };
-    for (const evName of ['dl-workshop-changed', 'dl-ext-registry-changed']) {
+    for (const evName of ['dl-workshop-changed', 'dl-ext-registry-changed', 'dl-expr-changed', 'dl-avatars-ready']) {
       try { W.addEventListener(evName, onWsChange); stops.push(() => W.removeEventListener(evName, onWsChange)); } catch (_) { /* ignore */ }
     }
     schedule(0);

@@ -1,4 +1,4 @@
-// 斗罗远程正文 gf-shenlanjiadian.js 1.1.0
+// 斗罗远程正文 gf-shenlanjiadian.js 2.1.0
 // 斗罗金手指·深蓝加点：由 源码/build.py 生成，勿手改。逻辑见 源码/金手指/类型/深蓝加点.js，主页面见 源码/金手指/页面/，接线见 源码/金手指/入口.js。
 import { registerMvuSchema } from "https://testingcf.jsdelivr.net/gh/StageDog/tavern_resource/dist/util/mvu_zod.js";
 
@@ -319,7 +319,26 @@ function normalLevel(p, part) {
       else if (w.品质 === '超神级' && base < 120) q = 5;
     }
   }
-  return Math.max(0, Math.round(base + q));
+  return Math.max(0, Math.round(base + q + peakBonus(p, part, base + q)));
+}
+// 极限阶位（§27.5，本卡规则）：只给 99 级、未成神的人；准半神 +0、半神 +2、准神 +4，精神力到神元境再 +1。
+// 斗4 100 级就是神级，这一加成在斗4 不越过 99（准神在斗4 叫“半步神级”，只作显示）
+const PEAK_TIERS = Object.freeze(['准半神', '半神', '准神']);
+const PEAK_BONUS = Object.freeze({ 准半神: 0, 半神: 2, 准神: 4 });
+function peakBonus(p, part, sofar) {
+  if (p.魂力等级 !== 99 || isTrueGod(p) || (p.神阶 && GOD_LEVEL[p.神阶])) return 0;
+  let b = PEAK_BONUS[p.极限阶位] || 0;
+  const sp = p.精神力 || {};
+  if (!sp.神识 && spiritRealm(sp.点数, part) === '神元境') b += 1;
+  if (part === '斗4') b = Math.max(0, Math.min(b, 99 - sofar));
+  return b;
+}
+// 极限阶位的显示：斗3（及神界、英雄）用原名；斗4 准神叫半步神级、另两层不另标；斗1、斗2 不出现这三个词
+function peakLabel(tier, part) {
+  if (!PEAK_TIERS.includes(tier)) return null;
+  if (part === '斗1' || part === '斗2') return null;
+  if (part === '斗4') return tier === '准神' ? '半步神级' : null;
+  return tier;
 }
 // 斗铠 1–6 字宿主等级衰减曲线：严格单调不倒挂，1–3 字凡间封顶 99，4 字准神（99+4字=105），6 字不单靠斗铠破 140 神王线
 const ARMOR_BONUS_PTS = Object.freeze({
@@ -409,8 +428,8 @@ function titleOf(p, part) {
   const L = p.魂力等级;
   if (!isNum(L)) return p.出身 === '魂兽' || isNum(p.修为年限) ? beastTitle(p.修为年限, p.凶兽) : '';
   if (L >= 100 && part === '斗4') return L >= 120 ? '超神' : L >= 110 ? '真神' : '神级';
-  if (L >= 99) return '极限斗罗';
-  if (L >= 95) return '超级斗罗';
+  if (L >= 99) return part === '斗1' ? '绝世斗罗' : '极限斗罗';
+  if (L >= 95) return part === '斗1' ? '巅峰斗罗' : '超级斗罗';
   // 卡在整十级时，已经拿到下一个魂环就算进了下一档（30 级三环＝魂尊）
   const idx = Math.max(Math.ceil(L / 10) - 1, Math.min(ringCount(p), Math.floor(L / 10)));
   return TITLES[clampN(idx, 0, 9)];
@@ -424,8 +443,32 @@ function ringCount(p) {
   }
   return n;
 }
+// 魂核（§27.5）：第一颗斗1、斗2、神界、英雄 90 级，斗3、斗4 70 级；99 级要第二颗。凝成、开裂、受损、封印都算有；只提醒，不拦升级
+const CORE_HELD = Object.freeze(['凝成', '开裂', '受损', '封印']);
+const coreGate = (part) => (part === '斗3' || part === '斗4' ? 70 : 90);
+const coresHeld = (p) => (Array.isArray(p && p.魂核) ? p.魂核.filter((c) => c && CORE_HELD.includes(c.阶段)).length : 0);
+const coresNeeded = (level, part) => (!isNum(level) ? 0 : level >= 99 ? 2 : level >= coreGate(part) ? 1 : 0);
 function nextHurdle(p, part, isHero) {
+  const res = ringHurdle(p, part, isHero);
   const L = p.魂力等级;
+  if (!res || !isNum(L) || (p.神途 && p.神途.神位) || (p.神阶 && GOD_LEVEL[p.神阶]) || L > 99) return res;
+  // NPC 没记过魂核时当资料不全，不提醒（同魂环）
+  if (!isHero && !(Array.isArray(p.魂核) && p.魂核.length)) return res;
+  const held = coresHeld(p), nowNeed = coresNeeded(L, part);
+  const ord = (n) => RING_ORD[n] || n;
+  // 魂核的话插在“；再往上需……”前面
+  const put = (txt) => ({ ...res, 说明: res.说明.includes('；再往上') ? res.说明.replace('；再往上', txt + '；再往上') : res.说明 + txt });
+  if (nowNeed > held) {
+    const why = held === 0 ? `${coreGate(part)} 级起要有魂核` : '99 级要第二魂核';
+    return put(`；缺第${ord(held + 1)}魂核（${why}，现有 ${held} 颗；不拦升级）`);
+  }
+  const T = res.等级;
+  if (isNum(T) && T <= 99 && coresNeeded(T, part) > held) return put(`，并凝第${ord(held + 1)}魂核`);
+  return res;
+}
+function ringHurdle(p, part, isHero) {
+  const L = p.魂力等级;
+  const peak = part === '斗1' ? '绝世斗罗' : '极限斗罗';
   const seat = p.神途 && p.神途.神位;
   if (!isNum(L)) {
     const y = p.修为年限;
@@ -440,8 +483,8 @@ function nextHurdle(p, part, isHero) {
     if (L >= 110) return { 等级: 120, 说明: '120 级 · 超神' };
     if (L >= 100) return { 等级: 110, 说明: '110 级 · 真神' };
     if (L >= 99) return { 等级: 100, 说明: '100 级 · 神级（第十阶）' };
-  } else if (L >= 99) return { 等级: null, 说明: '99 级 · 极限斗罗；再往上需继承神位' };
-  if (L >= 90) return { 等级: 99, 说明: part === '斗4' ? '99 级 · 极限斗罗' : '99 级 · 极限斗罗；再往上需神位' };
+  } else if (L >= 99) return { 等级: null, 说明: `99 级 · ${peak}；再往上需继承神位` };
+  if (L >= 90) return { 等级: 99, 说明: part === '斗4' ? `99 级 · ${peak}` : `99 级 · ${peak}；再往上需神位` };
   const rings = ringCount(p);
   // 等级已经越过了魂环数撑得住的瓶颈（不硬压，只提醒）。NPC 一个魂环都没记时当资料不全，不提醒。
   const owed = Math.min(9, Math.ceil(L / 10) - 1);

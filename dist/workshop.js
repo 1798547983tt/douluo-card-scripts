@@ -1,4 +1,4 @@
-// 斗罗远程正文 workshop.js 1.1.0
+// 斗罗远程正文 workshop.js 2.1.0
 // 斗罗创意工坊卡内入口：由 创意工坊/site/entry/build.mjs 生成，源码在 entry/src、shared 和 变量系统/源码/开局/存档.js，别手改。连接 https://douluo.730107129.xyz
 (() => {
 'use strict';
