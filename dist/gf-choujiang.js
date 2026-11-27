@@ -4820,8 +4820,11 @@ const GF_DEF = {
     const lastKey = dateKey(G.抽奖.上次免费);
     if (lastKey == null) {
       G.抽奖.上次免费 = today;
-    } else if (todayKey > lastKey) {
-      G.抽奖.券 = Math.min(999, G.抽奖.券 + 1);
+      return;
+    }
+    const elapsedDays = dayNo(todayKey) - dayNo(lastKey);
+    if (elapsedDays > 0) {
+      G.抽奖.券 = Math.min(999, G.抽奖.券 + elapsedDays);
       G.抽奖.上次免费 = today;
     }
   },
